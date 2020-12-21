@@ -3,7 +3,10 @@ import math
 import random
 import board
 import adafruit_dotstar as dotstar
+from os import listdir
+from os.path import isfile, join, splitext
 from PIL import Image, ImageOps
+from datetime import datetime
 
 panelCount = 4
 panelWidth = 8
@@ -13,6 +16,7 @@ dotCount = panelTotal * panelCount
 asciiDir = './ascii'
 
 FILENAME = asciiDir + '/' + '48.png'
+asciiDict = {}
 
 dots = dotstar.DotStar(
         board.SCK, 
@@ -22,69 +26,76 @@ dots = dotstar.DotStar(
         brightness=0.1
     )
 
-IMG_RAW = Image.open(FILENAME).convert("RGB")
-IMG = ImageOps.invert(IMG_RAW)
-PIXELS = IMG.load()
-WIDTH = IMG.size[0]
-HEIGHT = IMG.size[1]
-print("%dx%d pixels" % IMG.size)
+def loadImage(filename):
+    imageRaw = Image.open(filename).convert("RGB")
+    imageInvert = ImageOps.invert(imageRaw)
+    imagePixels = imageInvert.load()
+    imageWidth = imageInvert.size[0]
+    imageHeight = imageInvert.size[1]
+    print("%dx%d pixels" % imageInvert.size)
+
+    print("Allocating...")
+    imageColumns = [0 for x in range(imageWidth)]
+    for x in range(imageWidth):
+        imageColumns[x] = [[0, 0, 0, 0] for _ in range(imageHeight)]
+
+    print("Converting...")
+    for x in range(imageWidth):  # For each column of image
+        for y in range(imageHeight):  # For each pixel in column
+            value = imagePixels[x, y]  # Read RGB pixel in image
+            imageColumns[x][y][0] = value[0]  # Gamma-corrected R
+            imageColumns[x][y][1] = value[1]  # Gamma-corrected G
+            imageColumns[x][y][2] = value[2]  # Gamma-corrected B
+            imageColumns[x][y][3] = 1.0  # Brightness
+            #print ('X ' + str(x) + ' Y ' + str(y) + ' value: ' + str(value[0]))
+    return imageColumns
 
 
-print("Allocating...")
-COLUMN = [0 for x in range(WIDTH)]
-for x in range(WIDTH):
-    COLUMN[x] = [[0, 0, 0, 0] for _ in range(HEIGHT)]
+asciiFiles = [f for f in listdir(asciiDir) if isfile(join(asciiDir, f))]
 
-print("Converting...")
-for x in range(WIDTH):  # For each column of image
-    for y in range(HEIGHT):  # For each pixel in column
-        value = PIXELS[x, y]  # Read RGB pixel in image
-        COLUMN[x][y][0] = value[0]  # Gamma-corrected R
-        COLUMN[x][y][1] = value[1]  # Gamma-corrected G
-        COLUMN[x][y][2] = value[2]  # Gamma-corrected B
-        COLUMN[x][y][3] = 1.0  # Brightness
-        #print ('X ' + str(x) + ' Y ' + str(y) + ' value: ' + str(value[0]))
+for asciiFile in asciiFiles:
+    parts = splitext(asciiFile)
+    print('Loading ASCII #' + parts[0])
+    asciiDict[parts[0]] = loadImage(asciiDir + '/' + asciiFile)
 
-# HELPERS
+
 # a random color 0 -> 192
 def random_color():
     return random.randrange(0, 7) * 32
-
-#while True:
-    ## Fill each dot with a random color
-    #for dot in range(dotCount):
-        #dots[dot] = (random_color(), random_color(), random_color())
-#
-    #dots.show()
-    #time.sleep(0.0)
-
 #
 # Draw a given image matrix at a given offset
 #
-def showImage(img, x, y):
+def showImage(img, xOffset, yOffset):
     for x in range(len(img)):  # For each column of image
         for y in range(len(img[0])):  # For each pixel in column
+            b = 0.1
             value = img[x][y]  # Read RGB pixel in image
-            pixel = getPixel(x,y)
-            dots[pixel] = [value[0], value[1], value[2]]
-    dots.show()
+            pixel = getPixel(xOffset + x,yOffset + y)
+            dots[pixel] = [int(value[0] * b), int(value[1] * b), int(value[2] * b)]
+    return xOffset + len(img)
 
-def getPixel1(col, row):
-    pX = col % panelWidth
-    pN = math.floor((col + 1) / panelWidth)
-    pixel = (panelTotal * pN) + (panelWidth * row + pX)
-    return pixel
+def showText(text, xOffset, yOffset):
+    x = xOffset
+    for char in text:
+        asciiNum = ord(char)
+        asciiImage = asciiDict[str(asciiNum)]
+        x = showImage(asciiImage, x, yOffset) + 1
 
 def getPixel(col, row):
     pixel = (panelHeight * col) + row
     return pixel
 
 
-print("Clearing screen")
-for x in range(0, dotCount):
-    dots[x] = (0, 0, 0)
-dots.show()
+def clearScreen():
+    for x in range(0, dotCount):
+        dots[x] = (0, 0, 0)
 
-showImage(COLUMN, 0, 0)
+while True:
+    clearScreen()
+    now = datetime.now()
 
+    currentTime = now.strftime("%-I:%M")
+    showText(currentTime, 0, 0)
+    dots.show()
+    time.sleep(1.0)
 
